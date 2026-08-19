@@ -260,12 +260,20 @@ class TestAuditVerdicts:
     """CI is where a wrong verdict does the most damage: a rate-limited run must
     never fail somebody's build by calling their citations invented."""
 
-    def test_unreachable_source_yields_unchecked_not_suspect(self, monkeypatch):
+    def test_nothing_reachable_at_all_yields_unchecked(self, monkeypatch):
+        """Aggregators and registry both unreachable: nothing can be concluded.
+
+        `doi_registered` is stubbed rather than left to run, or this test reaches
+        doi.org for real and then passes or fails depending on whether the
+        machine has a network. That is exactly how it slipped through locally
+        and failed in CI.
+        """
         cli.NET_ERRORS.clear()
         def boom(ident):
             cli.NET_ERRORS.append("api.openalex.org: HTTP 429")
             return None
         monkeypatch.setattr(cli, "resolve_identifier", boom)
+        monkeypatch.setattr(cli, "doi_registered", lambda doi, timeout=15: None)
         st, _ = cli.audit_ref({"key": "k", "title": "", "doi": "10.1/x", "arxiv": ""})
         assert st == "UNCHECKED"
         cli.NET_ERRORS.clear()
@@ -273,11 +281,13 @@ class TestAuditVerdicts:
     def test_identifier_that_resolves_to_nothing_is_suspect(self, monkeypatch):
         cli.NET_ERRORS.clear()
         monkeypatch.setattr(cli, "resolve_identifier", lambda ident: None)
+        monkeypatch.setattr(cli, "doi_registered", lambda doi, timeout=15: False)
         st, detail = cli.audit_ref({"key": "k", "title": "", "doi": "10.9999/nope", "arxiv": ""})
-        assert st == "SUSPECT" and "resolves to nothing" in detail
+        assert st == "SUSPECT" and "doi.org" in detail
 
     def test_a_real_identifier_is_ok(self, monkeypatch):
         cli.NET_ERRORS.clear()
+        monkeypatch.setattr(cli, "doi_registered", lambda doi, timeout=15: None)
         monkeypatch.setattr(cli, "resolve_identifier",
                             lambda ident: {"title": "A Real Paper"})
         st, detail = cli.audit_ref({"key": "k", "title": "", "doi": "10.1/x", "arxiv": ""})
