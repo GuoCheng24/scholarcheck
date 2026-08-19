@@ -50,6 +50,18 @@ Closest candidate:
 -> If that is the paper, re-run with its DOI: scholarcheck bibtex "<DOI>".
 ```
 
+The same refusal applies when the sources themselves are unavailable, which is
+when a wrong entry is most likely — the "best" match would then be whichever
+paper happened to be reachable:
+
+```console
+$ scholarcheck bibtex "Deep Residual Learning for Image Recognition in Medicine"
+INCONCLUSIVE - a primary source could not be reached, so no entry is emitted for: ...
+  Could not reach: api.openalex.org: HTTP 429
+  (the partial search's best candidate was 50% coverage - not enough to stand on
+   while sources are down)
+```
+
 **3. An identifier is resolved, not searched.**
 `verify "arXiv:1906.08253"` looks the identifier up directly. Feeding it to a
 title matcher would return whatever paper happens to share those digits and

@@ -127,3 +127,42 @@ class TestNetworkBookkeeping:
             assert cli._net_failed(primary_only=True) is False
         finally:
             cli.NET_ERRORS.clear()
+
+
+class TestBibtexRefusesToGuess:
+    """`bibtex` promises never to hand back a wrong entry. Two ways it did.
+
+    Found by running the README's own example while OpenAlex was rate-limiting:
+    a query for a paper about residual learning in medicine came back with a
+    BibTeX entry for an unrelated paper on image retargeting. The partial search
+    scored it at exactly 0.50, the gate was `< 0.5`, and nothing anywhere said
+    the sources were down.
+    """
+
+    def test_a_primary_source_failure_blocks_the_entry(self, monkeypatch):
+        monkeypatch.setattr(cli, "best_match",
+                            lambda s: ({"title": "Some Unrelated Paper", "doi": "10.0/x"}, 0.9))
+        def fail(*a, **k):
+            cli.NET_ERRORS.append(("openalex", "HTTP 429"))
+            return None, 0.9
+        monkeypatch.setattr(cli, "best_match", fail)
+        out = cli.bibtex("Deep Residual Learning for Image Recognition in Medicine")
+        assert isinstance(out, tuple) and out[0] == "INCONCLUSIVE"
+        cli.NET_ERRORS.clear()
+
+    def test_exactly_half_coverage_is_weak_not_confident(self, monkeypatch):
+        """A query whose content words are half covered is a coin flip, and the
+        boundary used to let it through."""
+        cli.NET_ERRORS.clear()
+        monkeypatch.setattr(cli, "best_match",
+                            lambda s: ({"title": "Half Matching Paper", "doi": "10.0/x"}, 0.5))
+        out = cli.bibtex("some title here")
+        assert isinstance(out, tuple) and out[0] == "WEAK"
+
+    def test_a_strong_match_is_still_allowed_through(self, monkeypatch):
+        cli.NET_ERRORS.clear()
+        monkeypatch.setattr(cli, "best_match",
+                            lambda s: ({"title": "Strong", "doi": "10.0/x"}, 0.95))
+        monkeypatch.setattr(cli, "_curl", lambda *a, **k: "@article{strong2020, title={Strong}}")
+        out = cli.bibtex("strong matching title")
+        assert isinstance(out, str) and out.startswith("@article")

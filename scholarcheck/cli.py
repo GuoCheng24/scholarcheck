@@ -370,15 +370,25 @@ def _fallback_bibtex(p):
             f"  journal={{{p.get('venue','')}}}\n}}")
 
 def bibtex(s):
-    """Returns a BibTeX string; or ('WEAK', candidate, ratio) when the title match is
-    too weak to be safe; or None. It will not hand back a wrong entry."""
+    """Returns a BibTeX string; ('WEAK', candidate, ratio) when the title match is
+    too weak to be safe; ('INCONCLUSIVE', candidate, ratio) when a primary source
+    could not be reached; or None. It will not hand back a wrong entry."""
     s = s.strip()
     m = re.search(DOI_RE, s)
     doi = m.group(0) if m else None
     meta = None
     if not doi:                             # title input: best_match guards against returning the wrong paper
+        NET_ERRORS.clear()
         meta, r = best_match(s)
-        if not meta or r < 0.5:
+        # A degraded search is exactly when the wrong entry is most likely: the
+        # "best" match is then drawn from whichever sources happened to answer.
+        # `verify` already refuses to speak under those conditions; emitting a
+        # citation would be a stronger claim than refusing to make a weaker one.
+        if _net_failed():
+            return ("INCONCLUSIVE", meta, r)
+        # Inclusive boundary: half the query's content words is not a confident
+        # match by any reading, and an exact 0.50 used to slip through.
+        if not meta or r <= 0.5:
             return ("WEAK", meta, r)        # better to return nothing than to silently emit a wrong citation
         doi = meta.get("doi")
     if doi:
@@ -722,7 +732,15 @@ def _main():
 
     if a.cmd == "bibtex":
         b = bibtex(a.query)
-        if isinstance(b, tuple) and b and b[0] == "WEAK":
+        if isinstance(b, tuple) and b and b[0] == "INCONCLUSIVE":
+            _, cand, r = b
+            print(f"INCONCLUSIVE - a primary source could not be reached, so no entry is emitted "
+                  f"for: {a.query}")
+            print(f"  {_net_hint()}")
+            if cand:
+                print(f"  (the partial search's best candidate was {r:.0%} coverage - not enough "
+                      f"to stand on while sources are down)")
+        elif isinstance(b, tuple) and b and b[0] == "WEAK":
             _, cand, r = b
             if cand:
                 print(f"No confident match (best term coverage only {r:.0%}). Refusing to emit a "
