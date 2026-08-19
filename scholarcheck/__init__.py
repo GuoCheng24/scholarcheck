@@ -28,7 +28,7 @@ from .cli import (
     NET_ERRORS,
 )
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 
 def verify_citation(query, n=5):

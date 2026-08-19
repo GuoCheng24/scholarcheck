@@ -380,6 +380,123 @@ def _fallback_bibtex(p):
     return (f"@article{{{key},\n  title={{{title}}},\n  author={{{auth}}},\n  year={{{y}}},\n"
             f"  journal={{{p.get('venue','')}}}\n}}")
 
+# ---------- audit: check every reference in a file ----------
+
+_BIB_ENTRY = re.compile(r"@(\w+)\s*\{\s*([^,\s]+)\s*,(.*?)\n\s*\}\s*(?=@|\Z)", re.S)
+
+
+def _bib_field(body, name):
+    """One field out of a BibTeX entry body, braces balanced.
+
+    A real parser is overkill and would cost a dependency; this handles the
+    shapes bibtex files actually contain, including nested braces in titles.
+    """
+    m = re.search(r"\b" + name + r"\s*=\s*", body, re.I)
+    if not m:
+        return ""
+    i = m.end()
+    while i < len(body) and body[i] in " \t":
+        i += 1
+    if i >= len(body):
+        return ""
+    if body[i] == "{":
+        depth, j = 0, i
+        while j < len(body):
+            if body[j] == "{":
+                depth += 1
+            elif body[j] == "}":
+                depth -= 1
+                if depth == 0:
+                    # Inner braces in a bibtex title only protect capitalisation
+                    # ("the {Kakeya} conjecture"); they are not part of the text.
+                    v = re.sub(r"[{}]", "", body[i + 1:j])
+                    return re.sub(r"\s+", " ", v).strip()
+            j += 1
+        return ""
+    if body[i] == '"':
+        j = body.find('"', i + 1)
+        return re.sub(r"\s+", " ", body[i + 1:j]).strip() if j > 0 else ""
+    j = i
+    while j < len(body) and body[j] not in ",\n":
+        j += 1
+    return body[i:j].strip()
+
+
+def parse_refs(text):
+    """References out of a .bib file, or one identifier per line.
+
+    Returns [{key, title, doi, arxiv}]. Anything without a title or an
+    identifier is skipped - there is nothing to check it against.
+    """
+    out = []
+    if "@" in text and re.search(r"@\w+\s*\{", text):
+        for _typ, key, body in _BIB_ENTRY.findall(text + "\n"):
+            doi = _bib_field(body, "doi")
+            eprint = _bib_field(body, "eprint")
+            title = _bib_field(body, "title")
+            arxiv = ""
+            if eprint and re.fullmatch(ARXIV_RE + r"(v\d+)?", eprint.strip()):
+                arxiv = eprint.strip()
+            if not arxiv:
+                note = _bib_field(body, "note") + " " + _bib_field(body, "url")
+                m = re.search(r"arxiv[:/\s]*(" + ARXIV_RE + r")", note, re.I)
+                if m:
+                    arxiv = m.group(1)
+            if title or doi or arxiv:
+                out.append({"key": key, "title": title, "doi": doi, "arxiv": arxiv})
+        return out
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        m = re.search(DOI_RE, line)
+        if m:
+            out.append({"key": line[:40], "title": "", "doi": m.group(0), "arxiv": ""})
+            continue
+        m = re.search(r"(?:arxiv[:\s/]*)(" + ARXIV_RE + r")", line, re.I)
+        if m:
+            out.append({"key": line[:40], "title": "", "doi": "", "arxiv": m.group(1)})
+            continue
+        out.append({"key": line[:40], "title": line, "doi": "", "arxiv": ""})
+    return out
+
+
+def audit_ref(ref):
+    """One reference -> (state, detail). States: OK / SUSPECT / UNCHECKED.
+
+    UNCHECKED is not a failure. A rate-limited run must never be reported as
+    a fabricated citation - that is the same error this tool exists to stop,
+    and in CI it would fail somebody's build over a busy database.
+    """
+    NET_ERRORS.clear()
+    ident = ref.get("doi") or (("arXiv:" + ref["arxiv"]) if ref.get("arxiv") else "")
+    if ident:
+        hit = resolve_identifier(ident)
+        if hit:
+            return "OK", hit.get("title", "")[:70]
+        if _net_failed():
+            return "UNCHECKED", _net_hint().splitlines()[0]
+        return "SUSPECT", "identifier resolves to nothing: " + ident
+    title = ref.get("title") or ""
+    if not title:
+        return "UNCHECKED", "no title or identifier to check"
+    cands = search_openalex(title, 3) or []
+    if not cands or _match_ratio(title, cands[0].get("title", "")) < 0.6:
+        cands = cands + (search_s2(title, 3) or [])
+    if not cands:
+        return ("UNCHECKED", _net_hint().splitlines()[0]) if _net_failed() else \
+               ("SUSPECT", "no record in any source")
+    best = max(cands, key=lambda p: _match_ratio(title, p.get("title", "")))
+    r = _match_ratio(title, best.get("title", ""))
+    if r >= 0.75:
+        return "OK", best.get("title", "")[:70]
+    if _net_failed():
+        return "UNCHECKED", "a primary source was unreachable; not judged"
+    if r >= 0.45:
+        return "OK", "partial (%.0f%%): %s" % (r * 100, best.get("title", "")[:56])
+    return "SUSPECT", "closest is only %.0f%%: %s" % (r * 100, best.get("title", "")[:52])
+
+
 def bibtex(s):
     """Returns a BibTeX string; ('WEAK', candidate, ratio) when the title match is
     too weak to be safe; ('INCONCLUSIVE', candidate, ratio) when a primary source
@@ -631,9 +748,11 @@ def _main():
         description="Verifiable literature grounding - OpenAlex / Semantic Scholar / Crossref / arXiv",
         epilog='example: scholarcheck priorart "low-degree polynomial detection lower bound" -n 6 --since 2020',
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["search", "priorart", "occupancy", "verify", "bibtex", "citedby", "fetch", "latest", "journal", "injournal"])
-    ap.add_argument("query", help="focused keywords / paper title / DOI / arXiv id / URL / journal name")
+    ap.add_argument("cmd", choices=["search", "priorart", "occupancy", "verify", "bibtex", "citedby", "fetch", "latest", "journal", "injournal", "audit"])
+    ap.add_argument("query", help="focused keywords / paper title / DOI / arXiv id / URL / journal name / for `audit`, a .bib file or a list of identifiers")
     ap.add_argument("-n", type=int, default=8, help="number of results (default 8)")
+    ap.add_argument("--strict", action="store_true",
+                    help="audit: also fail when a reference could not be checked")
     ap.add_argument("--since", default=None, help="only papers from year YYYY onwards")
     ap.add_argument("--topic", default=None, help="injournal: topic keywords to filter within the journal")
     ap.add_argument("--json", action="store_true", help="structured JSON output")
@@ -707,6 +826,41 @@ def _main():
         for i, p in enumerate(res, 1):
             print(fmt_paper(p, i)); print()
         return
+
+    if a.cmd == "audit":
+        try:
+            text = open(a.query, encoding="utf-8", errors="replace").read()
+        except OSError as e:
+            print(f"cannot read {a.query}: {e}")
+            return 2
+        refs = parse_refs(text)
+        if not refs:
+            print(f"no references found in {a.query} - expected a .bib file, or one "
+                  f"DOI / arXiv id / title per line")
+            return 2
+        results = [(r, *audit_ref(r)) for r in refs]
+        if a.json:
+            print(json.dumps([{"key": r["key"], "state": st, "detail": d}
+                              for r, st, d in results], ensure_ascii=False, indent=2))
+        else:
+            width = min(28, max(len(r["key"]) for r, _, _ in results))
+            for r, st, d in results:
+                mark = {"OK": "ok      ", "SUSPECT": "SUSPECT ", "UNCHECKED": "unchecked"}[st]
+                print(f"  {mark} {r['key'][:width].ljust(width)}  {d}")
+            n_ok = sum(1 for _, st, _ in results if st == "OK")
+            n_sus = sum(1 for _, st, _ in results if st == "SUSPECT")
+            n_unk = len(results) - n_ok - n_sus
+            print(f"\n{len(results)} references: {n_ok} verified, {n_sus} suspect, "
+                  f"{n_unk} unchecked")
+            if n_sus:
+                print("Suspect entries did not resolve anywhere reachable. Check them by "
+                      "hand before submitting.")
+            if n_unk and not a.strict:
+                print("Unchecked entries are not a verdict - a source was unavailable. "
+                      "Use --strict to fail on these too.")
+        n_sus = sum(1 for _, st, _ in results if st == "SUSPECT")
+        n_unk = sum(1 for _, st, _ in results if st == "UNCHECKED")
+        return 1 if (n_sus or (a.strict and n_unk)) else 0
 
     if a.cmd == "verify":
         exact = resolve_identifier(a.query)

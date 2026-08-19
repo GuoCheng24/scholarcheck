@@ -1,0 +1,11 @@
+- id: scholarcheck
+  name: check every citation actually exists
+  description: >
+    Verifies each reference in your .bib against OpenAlex, Semantic Scholar,
+    Crossref and arXiv. Fails on references that resolve nowhere. A reference
+    that could not be checked because a source was unavailable is reported but
+    does not fail the run, unless you pass --strict.
+  entry: scholarcheck audit
+  language: python
+  files: \.bib$
+  pass_filenames: true

@@ -206,3 +206,88 @@ class TestNegativeVerdictsNeedCompleteEvidence:
         cli._main()
         out = capsys.readouterr().out
         assert "hallucinated" in out and "INCONCLUSIVE" not in out
+
+
+class TestBibParsing:
+    """The audit command is only useful if it can read a real .bib file, so the
+    shapes that actually appear in one are pinned: nested braces in titles,
+    quoted values, arXiv eprints, entries with no identifier at all."""
+
+    BIB = r'''
+@article{wang2025kakeya,
+  title = {Volume estimates for unions of convex sets, and the {Kakeya} set conjecture},
+  author = {Wang, Hong and Zahl, Joshua},
+  eprint = {2502.17655},
+  archivePrefix = {arXiv}
+}
+@inproceedings{he2016resnet,
+  title = "Deep Residual Learning for Image Recognition",
+  year = 2016,
+  doi = {10.1109/cvpr.2016.90}
+}
+@misc{nothing2024,
+  author = {Nobody},
+  year = {2024}
+}
+'''
+
+    def test_finds_every_entry_with_something_to_check(self):
+        refs = cli.parse_refs(self.BIB)
+        keys = [r["key"] for r in refs]
+        assert "wang2025kakeya" in keys and "he2016resnet" in keys
+        assert "nothing2024" not in keys, "an entry with no title or id cannot be checked"
+
+    def test_nested_braces_in_a_title_survive(self):
+        r = [x for x in cli.parse_refs(self.BIB) if x["key"] == "wang2025kakeya"][0]
+        assert "Kakeya" in r["title"] and "{" not in r["title"]
+
+    def test_quoted_values_are_read(self):
+        r = [x for x in cli.parse_refs(self.BIB) if x["key"] == "he2016resnet"][0]
+        assert r["title"].startswith("Deep Residual")
+        assert r["doi"] == "10.1109/cvpr.2016.90"
+
+    def test_arxiv_eprint_is_picked_up(self):
+        r = [x for x in cli.parse_refs(self.BIB) if x["key"] == "wang2025kakeya"][0]
+        assert r["arxiv"] == "2502.17655"
+
+    def test_plain_identifier_list_also_works(self):
+        refs = cli.parse_refs("10.1109/cvpr.2016.90\narXiv:2502.17655\n# a comment\n\n")
+        assert len(refs) == 2
+        assert refs[0]["doi"] and refs[1]["arxiv"]
+
+
+class TestAuditVerdicts:
+    """CI is where a wrong verdict does the most damage: a rate-limited run must
+    never fail somebody's build by calling their citations invented."""
+
+    def test_unreachable_source_yields_unchecked_not_suspect(self, monkeypatch):
+        cli.NET_ERRORS.clear()
+        def boom(ident):
+            cli.NET_ERRORS.append("api.openalex.org: HTTP 429")
+            return None
+        monkeypatch.setattr(cli, "resolve_identifier", boom)
+        st, _ = cli.audit_ref({"key": "k", "title": "", "doi": "10.1/x", "arxiv": ""})
+        assert st == "UNCHECKED"
+        cli.NET_ERRORS.clear()
+
+    def test_identifier_that_resolves_to_nothing_is_suspect(self, monkeypatch):
+        cli.NET_ERRORS.clear()
+        monkeypatch.setattr(cli, "resolve_identifier", lambda ident: None)
+        st, detail = cli.audit_ref({"key": "k", "title": "", "doi": "10.9999/nope", "arxiv": ""})
+        assert st == "SUSPECT" and "resolves to nothing" in detail
+
+    def test_a_real_identifier_is_ok(self, monkeypatch):
+        cli.NET_ERRORS.clear()
+        monkeypatch.setattr(cli, "resolve_identifier",
+                            lambda ident: {"title": "A Real Paper"})
+        st, detail = cli.audit_ref({"key": "k", "title": "", "doi": "10.1/x", "arxiv": ""})
+        assert st == "OK" and "A Real Paper" in detail
+
+    def test_title_only_entry_far_from_everything_is_suspect(self, monkeypatch):
+        cli.NET_ERRORS.clear()
+        monkeypatch.setattr(cli, "search_openalex", lambda q, n=3:
+                            [{"title": "Totally Different Subject Matter Here"}])
+        monkeypatch.setattr(cli, "search_s2", lambda q, n=3: [])
+        st, _ = cli.audit_ref({"key": "k", "arxiv": "", "doi": "",
+                               "title": "Quantum Topological Radiomics for Zebra Diagnosis"})
+        assert st == "SUSPECT"

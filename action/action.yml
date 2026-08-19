@@ -1,0 +1,33 @@
+name: 'scholarcheck'
+description: 'Fail the build when a paper cites something that does not exist'
+branding:
+  icon: 'check-circle'
+  color: 'blue'
+inputs:
+  path:
+    description: 'The .bib file, or a file with one DOI / arXiv id / title per line'
+    required: true
+  strict:
+    description: 'Also fail when a reference could not be checked (a source was down)'
+    required: false
+    default: 'false'
+  mailto:
+    description: >
+      Your email. Joins OpenAlex polite pool, which has far higher rate limits -
+      strongly recommended in CI, where a shared runner IP is often throttled.
+    required: false
+    default: ''
+runs:
+  using: 'composite'
+  steps:
+    - shell: bash
+      run: pip install --quiet scholarcheck
+    - shell: bash
+      env:
+        SCHOLARCHECK_MAILTO: ${{ inputs.mailto }}
+      run: |
+        if [ "${{ inputs.strict }}" = "true" ]; then
+          scholarcheck audit "${{ inputs.path }}" --strict
+        else
+          scholarcheck audit "${{ inputs.path }}"
+        fi

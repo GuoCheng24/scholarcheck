@@ -81,10 +81,59 @@ pip install scholarcheck
 exactly one package and nothing else. Nothing to break, nothing to audit, and
 no API key: every source it queries is open.
 
+## Check a whole bibliography
+
+The thing you actually want before submitting: does every reference in this
+paper exist?
+
+```console
+$ scholarcheck audit refs.bib
+  ok        wang2025kakeya   Volume estimates for unions of convex sets, and the Kakeya set...
+  ok        he2016resnet     Deep Residual Learning for Image Recognition
+  SUSPECT   fake2024zebra    identifier resolves to nothing: 10.9999/nonexistent.2024.00001
+
+3 references: 2 verified, 1 suspect, 0 unchecked
+Suspect entries did not resolve anywhere reachable. Check them by hand before submitting.
+```
+
+<sub>The two real entries and the invented one are the exact fixture the tests use;
+the layout is what the command prints. On a rate-limited connection the last two
+lines would read `unchecked` rather than `SUSPECT` — see below for why that
+distinction is the point.</sub>
+
+Exit code is 1 when anything is suspect, so it drops into a pipeline as it is.
+It reads a `.bib`, or a plain file with one DOI / arXiv id / title per line.
+
+**A reference that could not be checked is reported as `unchecked`, not as
+suspect, and does not fail the run.** A rate-limited database is not evidence
+that your citation is invented, and failing someone's build on that basis would
+be the same mistake this tool exists to prevent. `--strict` fails on those too,
+if you would rather be stopped than proceed unsure.
+
+### In CI
+
+```yaml
+- uses: GuoCheng24/scholarcheck/action@main
+  with:
+    path: refs.bib
+    mailto: you@example.com     # OpenAlex polite pool - much higher limits on a shared runner
+```
+
+### As a pre-commit hook
+
+```yaml
+repos:
+  - repo: https://github.com/GuoCheng24/scholarcheck
+    rev: v0.1.2
+    hooks:
+      - id: scholarcheck
+```
+
 ## Commands
 
 | | |
 |---|---|
+| `audit <file.bib>` | Check every reference in a file; exit 1 if any is suspect |
 | `verify "<title/DOI/arXiv id>"` | Is this citation real? An identifier resolves exactly; a title is matched by term coverage |
 | `bibtex "<DOI/title>"` | A BibTeX entry — refuses to guess on a weak match |
 | `search "<keywords>"` | Multi-source search, re-ranked by term overlap |
