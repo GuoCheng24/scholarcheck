@@ -461,6 +461,33 @@ def parse_refs(text):
     return out
 
 
+def doi_registered(doi, timeout=15):
+    """Is this DOI registered at all? True / False / None if we could not ask.
+
+    doi.org is the registry itself, so its answer settles the question without
+    OpenAlex: a registered DOI redirects to its publisher, an unregistered one
+    is a 404. That distinction survives OpenAlex being rate-limited, which on a
+    shared CI runner is the common case rather than the exotic one.
+    """
+    cmd = ["curl", "-sS", "-o", "/dev/null", "-w", "%{http_code}",
+           "--max-time", str(timeout)]
+    if PROXY:
+        cmd += ["-x", PROXY]
+    cmd += ["-H", "Accept: application/x-bibtex", "https://doi.org/" + doi.strip()]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           env=_clean_env(), timeout=timeout + 6)
+        code = (r.stdout or "").strip()
+    except Exception:
+        return None
+    if code == "404":
+        return False
+    if code and code[0] in "23":
+        return True
+    NET_ERRORS.append("doi.org: HTTP %s" % (code or "no response"))
+    return None
+
+
 def audit_ref(ref):
     """One reference -> (state, detail). States: OK / SUSPECT / UNCHECKED.
 
@@ -474,6 +501,14 @@ def audit_ref(ref):
         hit = resolve_identifier(ident)
         if hit:
             return "OK", hit.get("title", "")[:70]
+        # The aggregators may be down, but for a DOI the registry itself can be
+        # asked directly, and its answer is the authoritative one.
+        if ref.get("doi"):
+            reg = doi_registered(ref["doi"])
+            if reg is False:
+                return "SUSPECT", "not registered at doi.org: " + ref["doi"]
+            if reg is True:
+                return "OK", "registered at doi.org (metadata lookup unavailable)"
         if _net_failed():
             return "UNCHECKED", _net_hint().splitlines()[0]
         return "SUSPECT", "identifier resolves to nothing: " + ident

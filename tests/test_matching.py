@@ -291,3 +291,40 @@ class TestAuditVerdicts:
         st, _ = cli.audit_ref({"key": "k", "arxiv": "", "doi": "",
                                "title": "Quantum Topological Radiomics for Zebra Diagnosis"})
         assert st == "SUSPECT"
+
+
+class TestDoiRegistry:
+    """doi.org is the registry, so it answers "does this DOI exist" on its own.
+    That path is what keeps `audit` working while OpenAlex is throttling, which
+    on a shared CI runner is the ordinary case rather than the exotic one.
+    """
+
+    @staticmethod
+    def _openalex_down(ident):
+        cli.NET_ERRORS.append("api.openalex.org: HTTP 429")
+        return None
+
+    def test_unregistered_doi_is_suspect_even_with_aggregators_down(self, monkeypatch):
+        cli.NET_ERRORS.clear()
+        monkeypatch.setattr(cli, "resolve_identifier", self._openalex_down)
+        monkeypatch.setattr(cli, "doi_registered", lambda doi, timeout=15: False)
+        st, detail = cli.audit_ref({"key": "k", "title": "", "doi": "10.9999/nope", "arxiv": ""})
+        assert st == "SUSPECT" and "doi.org" in detail
+        cli.NET_ERRORS.clear()
+
+    def test_registered_doi_is_ok_even_with_aggregators_down(self, monkeypatch):
+        cli.NET_ERRORS.clear()
+        monkeypatch.setattr(cli, "resolve_identifier", self._openalex_down)
+        monkeypatch.setattr(cli, "doi_registered", lambda doi, timeout=15: True)
+        st, _ = cli.audit_ref({"key": "k", "title": "", "doi": "10.1/real", "arxiv": ""})
+        assert st == "OK"
+        cli.NET_ERRORS.clear()
+
+    def test_registry_unreachable_falls_back_to_unchecked(self, monkeypatch):
+        """If even doi.org cannot be reached there is nothing to conclude."""
+        cli.NET_ERRORS.clear()
+        monkeypatch.setattr(cli, "resolve_identifier", self._openalex_down)
+        monkeypatch.setattr(cli, "doi_registered", lambda doi, timeout=15: None)
+        st, _ = cli.audit_ref({"key": "k", "title": "", "doi": "10.1/x", "arxiv": ""})
+        assert st == "UNCHECKED"
+        cli.NET_ERRORS.clear()

@@ -88,21 +88,27 @@ paper exist?
 
 ```console
 $ scholarcheck audit refs.bib
-  ok        wang2025kakeya   Volume estimates for unions of convex sets, and the Kakeya set...
-  ok        he2016resnet     Deep Residual Learning for Image Recognition
-  SUSPECT   fake2024zebra    identifier resolves to nothing: 10.9999/nonexistent.2024.00001
+  ok       wang2025kakeya  Volume estimates for unions of convex sets, and the Kakeya set conject
+  ok       he2016resnet    registered at doi.org (metadata lookup unavailable)
+  SUSPECT  fake2024zebra   not registered at doi.org: 10.9999/nonexistent.2024.00001
 
 3 references: 2 verified, 1 suspect, 0 unchecked
 Suspect entries did not resolve anywhere reachable. Check them by hand before submitting.
 ```
 
-<sub>The two real entries and the invented one are the exact fixture the tests use;
-the layout is what the command prints. On a rate-limited connection the last two
-lines would read `unchecked` rather than `SUSPECT` — see below for why that
-distinction is the point.</sub>
+<sub>That is a real run, and the middle line shows why the DOI registry is queried
+directly: OpenAlex was rate-limiting at the time, so the metadata lookup failed —
+but doi.org still settled whether the DOI exists, which is the question being
+asked. Without that path the same run reported two entries as unchecked and
+exited 0, having found nothing.</sub>
 
 Exit code is 1 when anything is suspect, so it drops into a pipeline as it is.
 It reads a `.bib`, or a plain file with one DOI / arXiv id / title per line.
+
+A DOI is checked against **doi.org itself**, not only the aggregators. The
+registry is the authority on whether a DOI exists, and asking it directly means
+the audit still works when OpenAlex is throttling — which on a shared CI runner
+is the normal case, not the exotic one.
 
 **A reference that could not be checked is reported as `unchecked`, not as
 suspect, and does not fail the run.** A rate-limited database is not evidence
