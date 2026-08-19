@@ -310,6 +310,49 @@ def search_arxiv(query, n):
         })
     return out
 
+def arxiv_by_id(aid):
+    """Look an arXiv id up on arXiv itself. Returns one paper dict, or None.
+
+    This is the authoritative mapping for an arXiv id, and it is used in
+    preference to resolving the id through a DOI. Aggregators derive the
+    10.48550/arXiv.* DOI second-hand and can attach it to the wrong record -
+    observed in the wild, returning an unrelated paper for a valid id, which is
+    far more damaging than returning nothing.
+    """
+    import xml.etree.ElementTree as ET
+
+    aid = aid.split("v")[0]
+    t = _curl(f"https://export.arxiv.org/api/query?id_list={urllib.parse.quote(aid)}")
+    if not t:
+        return None
+    try:
+        root = ET.fromstring(t)
+    except Exception:
+        return None
+    ns = {"a": "http://www.w3.org/2005/Atom"}
+    e = root.find("a:entry", ns)
+    if e is None:
+        return None
+    title = " ".join((e.findtext("a:title", default="", namespaces=ns) or "").split())
+    if not title or title.lower().startswith("error"):
+        return None
+    yr = (e.findtext("a:published", default="", namespaces=ns) or "")[:4]
+    doi = e.findtext("a:doi", default="", namespaces=ns) or None
+    return {
+        "title": title,
+        "year": int(yr) if yr.isdigit() else None,
+        "venue": "arXiv", "doi": doi, "arxiv": aid, "id": aid, "cited_by": 0,
+        "authors": [a.findtext("a:name", default="", namespaces=ns)
+                    for a in e.findall("a:author", ns)][:6],
+        "abstract": " ".join((e.findtext("a:summary", default="", namespaces=ns) or "").split())[:300],
+    }
+
+
+#: Recorded when two sources return materially different records for the same
+#: identifier. Cross-checking is the whole point of querying more than one.
+SOURCE_CONFLICTS = []
+
+
 # ---------- BibTeX ----------
 def _fallback_bibtex(p):
     """Build an entry from metadata when there is no Crossref DOI (arXiv -> @misc with eprint)."""
@@ -506,12 +549,20 @@ def resolve_identifier(s):
     m = re.search(r"(?:arxiv[:\s/]*)?(" + ARXIV_RE + r")", s, re.I)
     if m and (re.search(r"arxiv", s, re.I) or re.fullmatch(r"[\d.v]+", s.strip())):
         aid = m.group(1)
+        primary = arxiv_by_id(aid)            # authoritative for an arXiv id
         w = _openalex_work_full(doi="10.48550/arXiv." + aid.split("v")[0])
-        if w:
-            return _oa_work(w)
-        hits = search_arxiv(aid, 1)          # arXiv's own API as a fallback
-        if hits:
-            return hits[0]
+        secondary = _oa_work(w) if w else None
+        if primary and secondary:
+            # Disagreement means an aggregator has the id attached to the wrong
+            # work. Trust arXiv, and say so rather than silently picking one.
+            if _match_ratio(primary["title"], secondary["title"]) < 0.5:
+                SOURCE_CONFLICTS.append(
+                    f"arXiv:{aid} -> arXiv says \"{primary['title'][:60]}\"; "
+                    f"the aggregator says \"{secondary['title'][:60]}\"")
+            else:
+                primary["cited_by"] = secondary.get("cited_by", 0) or 0
+                primary["venue"] = secondary.get("venue") or primary["venue"]
+        return primary or secondary
     return None
 
 
@@ -541,7 +592,7 @@ OCC_TEMPLATE = (
     "    run `scholarcheck fetch \"<DOI/arXiv-id/title>\"` and check the full text."
 )
 
-def main():
+def _main():
     ap = argparse.ArgumentParser(
         description="Verifiable literature grounding - OpenAlex / Semantic Scholar / Crossref / arXiv",
         epilog='example: scholarcheck priorart "low-degree polynomial detection lower bound" -n 6 --since 2020',
@@ -629,7 +680,11 @@ def main():
             if a.json:
                 print(json.dumps(exact, ensure_ascii=False, indent=2)); return
             print("MATCH (exact identifier)")
-            print(fmt_paper(exact)); return
+            print(fmt_paper(exact))
+            for c in SOURCE_CONFLICTS:
+                print(f"  ! sources disagree - {c}\n"
+                      f"    arXiv is authoritative for an arXiv id; the record above is theirs.")
+            return
         if re.search(DOI_RE, a.query) or re.search(r"arxiv", a.query, re.I):
             # It looked like an identifier and did not resolve - say that,
             # rather than falling back to a title search that cannot succeed.
@@ -715,6 +770,16 @@ def main():
         for i, p in enumerate(res, 1):
             print(fmt_paper(p, i)); print()
         return
+
+def main():
+    """CLI entry point. Wraps the real one so the usage nudge cannot change
+    the exit status or swallow an exception."""
+    try:
+        return _main()
+    finally:
+        from ._nudge import record_run
+        record_run()
+
 
 if __name__ == "__main__":
     main()
