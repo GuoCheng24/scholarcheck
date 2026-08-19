@@ -2,13 +2,17 @@
 
 **Stop hallucinated citations.** Verify any reference against real metadata — from the command line, with zero dependencies.
 
+<p align="center">
+  <img src="docs/three-states.png" width="100%">
+</p>
+
 Language models invent plausible-looking papers: right-sounding title, plausible authors, a DOI that resolves to nothing. `scholarcheck` answers one question honestly — **does this paper actually exist?** — by querying OpenAlex, Semantic Scholar, Crossref and arXiv directly.
 
 ```console
-$ scholarcheck verify "Attention Is All You Need"
+$ scholarcheck verify "Deep Residual Learning for Image Recognition"
 MATCH (high confidence)   [query term coverage = 100%]
-Attention Is All You Need  (2017, NeurIPS; cited=6591)  doi:10.48550/arXiv.1706.03762
-    Ashish Vaswani, Noam Shazeer, Niki Parmar et al.
+Deep Residual Learning for Image Recognition  (2016, conference-paper; cited=226875)  doi:10.1109/cvpr.2016.90
+    Kaiming He, Xiangyu Zhang, Shaoqing Ren et al.
 
 $ scholarcheck verify "Quantum Topological Radiomics for Zebra Diagnosis in Martian Cohorts"
 NOT FOUND in any of the four sources -> this citation is very likely hallucinated
@@ -91,6 +95,18 @@ All optional:
 | `SCHOLARCHECK_PROXY` | e.g. `socks5h://127.0.0.1:1080`; default is a direct connection |
 
 Proxy behaviour is decided **solely** by `SCHOLARCHECK_PROXY`. Inherited `http_proxy` / `all_proxy` variables are stripped before each request, so the tool behaves the same on every machine.
+
+## What it can and cannot tell you
+
+**A match confirms the paper exists — not that the metadata you have is right.**
+Bibliographic databases often hold several records for one work: a preprint, a
+conference version, a publisher deposit. `verify` returns whichever record
+matched best, so the year and venue you see may belong to a different record
+than the one you meant to cite. Check them; the DOI is the reliable part.
+
+**"NOT FOUND" is strong evidence, not proof.** Very new work, non-English
+venues and some book chapters are indexed poorly. When it matters, run
+`search` with looser keywords before concluding a reference is invented.
 
 ## Notes from real use
 
