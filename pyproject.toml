@@ -7,7 +7,7 @@ name = "scholarcheck"
 version = "0.1.0"
 description = "Verify citations against real metadata - stop hallucinated references. Zero dependencies."
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [{ name = "Guo Cheng" }]
 keywords = ["citations", "bibtex", "openalex", "crossref", "arxiv",
