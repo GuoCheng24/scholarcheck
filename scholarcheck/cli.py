@@ -490,6 +490,31 @@ def latest(query, n, since=None):
     res.sort(key=lambda p: (p.get("year") or 0, _relevance(query, p)), reverse=True)
     return res[:n]
 
+def resolve_identifier(s):
+    """A DOI or arXiv id resolved exactly, or None if `s` is not an identifier.
+
+    Identifiers must not go through title search. Feeding "arXiv:1906.08253"
+    to a title matcher returns whatever paper happens to share those digits and
+    then scores it as a mismatch - which reads as "this citation is fake" when
+    the truth is that the query was never looked up properly.
+    """
+    m = re.search(DOI_RE, s)
+    if m:
+        w = _openalex_work_full(doi=m.group(0))
+        return _oa_work(w) if w else None
+
+    m = re.search(r"(?:arxiv[:\s/]*)?(" + ARXIV_RE + r")", s, re.I)
+    if m and (re.search(r"arxiv", s, re.I) or re.fullmatch(r"[\d.v]+", s.strip())):
+        aid = m.group(1)
+        w = _openalex_work_full(doi="10.48550/arXiv." + aid.split("v")[0])
+        if w:
+            return _oa_work(w)
+        hits = search_arxiv(aid, 1)          # arXiv's own API as a fallback
+        if hits:
+            return hits[0]
+    return None
+
+
 def best_match(query, n=6):
     """Title -> best matching paper, with re-ranking and a coverage ratio, so bibtex
     and citedby never silently resolve to the wrong paper. Returns (paper|None, ratio)."""
@@ -599,6 +624,22 @@ def main():
         return
 
     if a.cmd == "verify":
+        exact = resolve_identifier(a.query)
+        if exact:
+            if a.json:
+                print(json.dumps(exact, ensure_ascii=False, indent=2)); return
+            print("MATCH (exact identifier)")
+            print(fmt_paper(exact)); return
+        if re.search(DOI_RE, a.query) or re.search(r"arxiv", a.query, re.I):
+            # It looked like an identifier and did not resolve - say that,
+            # rather than falling back to a title search that cannot succeed.
+            if _net_failed():
+                print(f"INCONCLUSIVE - could not query the sources: {a.query}\n  {_net_hint()}")
+            else:
+                print(f"NOT FOUND - no record with this identifier: {a.query}\n"
+                      f"  Check the DOI or arXiv id; if it is correct, the work may be too "
+                      f"new to be indexed.")
+            return
         cands = search_openalex(a.query, 3) or []
         if not cands or _match_ratio(a.query, cands[0]["title"]) < 0.6:
             cands = cands + (search_s2(a.query, 3) or [])

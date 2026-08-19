@@ -45,7 +45,13 @@ Closest candidate:
 -> If that is the paper, re-run with its DOI: scholarcheck bibtex "<DOI>".
 ```
 
-**3. Recency is a separate command, on purpose.**
+**3. An identifier is resolved, not searched.**
+`verify "arXiv:1906.08253"` looks the identifier up directly. Feeding it to a
+title matcher would return whatever paper happens to share those digits and
+then score it as a mismatch — which reads as *"this citation is fake"* when the
+truth is that the query was never looked up properly.
+
+**4. Recency is a separate command, on purpose.**
 Relevance ranking systematically favours highly-cited older work, which is exactly wrong when you are checking whether someone *just* published your idea. `latest` filters by recency as well as relevance.
 
 ## Install
@@ -60,7 +66,7 @@ pip install scholarcheck
 
 | | |
 |---|---|
-| `verify "<title/DOI>"` | Is this citation real? Match confidence, or "likely hallucinated" |
+| `verify "<title/DOI/arXiv id>"` | Is this citation real? An identifier resolves exactly; a title is matched by term coverage |
 | `bibtex "<DOI/title>"` | A BibTeX entry — refuses to guess on a weak match |
 | `search "<keywords>"` | Multi-source search, re-ranked by term overlap |
 | `latest "<keywords>"` | Recent work only — relevance **and** recency |
