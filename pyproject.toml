@@ -14,11 +14,21 @@ keywords = ["citations", "bibtex", "openalex", "crossref", "arxiv",
             "literature-review", "hallucination", "research-tools", "doi"]
 classifiers = [
   "Development Status :: 4 - Beta",
-  "Environment :: Console",
   "Intended Audience :: Science/Research",
+  "Intended Audience :: Developers",
   "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Environment :: Console",
+  "Topic :: Scientific/Engineering :: Information Analysis",
   "Topic :: Scientific/Engineering",
+  "Topic :: Utilities",
 ]
 dependencies = []
 
