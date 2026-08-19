@@ -6,6 +6,7 @@ verdict.
 """
 import os
 import re
+import sys
 
 import pytest
 
@@ -166,3 +167,42 @@ class TestBibtexRefusesToGuess:
         monkeypatch.setattr(cli, "_curl", lambda *a, **k: "@article{strong2020, title={Strong}}")
         out = cli.bibtex("strong matching title")
         assert isinstance(out, str) and out.startswith("@article")
+
+
+class TestNegativeVerdictsNeedCompleteEvidence:
+    """The one error this tool must not make is calling a real citation
+    fabricated. The evidence for that is asymmetric: finding a paper proves it
+    exists whatever else was down, while failing to find it proves nothing at
+    all if a primary source could not be reached — it may be sitting in exactly
+    the database that was unavailable.
+    """
+
+    def test_no_match_is_withheld_when_a_primary_source_failed(self, monkeypatch, capsys):
+        cli.NET_ERRORS.clear()
+        cli.NET_ERRORS.append("api.openalex.org: HTTP 429")
+        monkeypatch.setattr(cli, "search_openalex", lambda q, n=3: [])
+        monkeypatch.setattr(cli, "search_s2", lambda q, n=3:
+                            [{"title": "Something Entirely Different", "authors": [], "year": 2020}])
+        monkeypatch.setattr(sys, "argv", ["scholarcheck", "verify", "A Paper That Does Exist"])
+        try:
+            cli._main()
+            out = capsys.readouterr().out
+            assert "INCONCLUSIVE" in out
+            assert "hallucinated" not in out, "must not accuse while evidence is incomplete"
+            assert "not evidence of fabrication" in out
+        finally:
+            cli.NET_ERRORS.clear()
+
+    def test_no_match_still_stands_when_every_source_answered(self, monkeypatch, capsys):
+        """The guard must not become 'never say anything negative' — that would
+        remove the feature."""
+        cli.NET_ERRORS.clear()
+        monkeypatch.setattr(cli, "search_openalex", lambda q, n=3:
+                            [{"title": "Something Entirely Different", "authors": [], "year": 2020}])
+        monkeypatch.setattr(cli, "search_s2", lambda q, n=3: [])
+        monkeypatch.setattr(sys, "argv",
+                            ["scholarcheck", "verify",
+                             "Quantum Topological Radiomics for Zebra Diagnosis"])
+        cli._main()
+        out = capsys.readouterr().out
+        assert "hallucinated" in out and "INCONCLUSIVE" not in out

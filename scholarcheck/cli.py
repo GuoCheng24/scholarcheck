@@ -38,7 +38,7 @@ Notes learned the hard way
     * A weak title match returns nothing rather than a plausible-looking wrong
       entry. Silently citing the wrong paper is worse than citing none.
 """
-import os, json, subprocess, argparse, urllib.parse, re, time, datetime
+import os, sys, json, subprocess, argparse, urllib.parse, re, time, datetime
 
 CUR_YEAR = datetime.date.today().year        # resolved at runtime, never hard-coded
 PROXY = os.environ.get("SCHOLARCHECK_PROXY", "")     # direct connection by default
@@ -125,7 +125,18 @@ def _net_hint():
     crit = [e for e in NET_ERRORS if any(h in e for h in _PRIMARY)]
     uniq = list(dict.fromkeys(crit or NET_ERRORS))[:3]
     hint = "Could not reach: " + "; ".join(uniq)
-    if PROXY:
+    # A 429 has its own remedy, and it is not "check your proxy" - the proxy is
+    # working, the other end is rate-limiting it. Saying the wrong thing here
+    # sends people to debug a network that is fine.
+    if any("429" in e for e in uniq):
+        hint += "\n  (rate-limited, not unreachable. Already retried with backoff.)"
+        if not MAILTO:
+            hint += ("\n  Set SCHOLARCHECK_MAILTO=you@example.com to join OpenAlex's polite pool,"
+                     "\n  which has far higher limits, then try again.")
+        else:
+            hint += ("\n  You are in the polite pool already; a shared IP can still be throttled."
+                     "\n  Waiting a minute usually clears it.")
+    elif PROXY:
         hint += f"\n  (using proxy {PROXY} from SCHOLARCHECK_PROXY - check it is reachable)"
     else:
         hint += "\n  (no proxy set; if your network needs one, set SCHOLARCHECK_PROXY)"
@@ -603,6 +614,19 @@ OCC_TEMPLATE = (
 )
 
 def _main():
+    # Typing the bare command is how most people first meet a CLI. argparse's
+    # default there is an error message, which is a poor greeting; show what the
+    # tool does and one runnable line instead.
+    if len(sys.argv) == 1:
+        print(__doc__.strip() if __doc__ else "scholarcheck")
+        print("\nTry one of these:\n"
+              '  scholarcheck verify "Attention Is All You Need"\n'
+              '  scholarcheck verify "arXiv:2502.17655"\n'
+              '  scholarcheck bibtex "10.1109/cvpr.2016.90"\n'
+              '  scholarcheck priorart "low-degree polynomial detection lower bound" -n 6\n'
+              "\nscholarcheck --help  for every command.")
+        return 0
+
     ap = argparse.ArgumentParser(
         description="Verifiable literature grounding - OpenAlex / Semantic Scholar / Crossref / arXiv",
         epilog='example: scholarcheck priorart "low-degree polynomial detection lower bound" -n 6 --since 2020',
@@ -719,6 +743,19 @@ def _main():
                   f"hallucinated: {a.query}"); return
         best = max(cands, key=lambda p: _match_ratio(a.query, p.get("title", "")))
         r = _match_ratio(a.query, best.get("title", ""))
+        # The evidence is asymmetric, and the verdict has to respect that.
+        # Finding the paper proves it exists no matter which source was down.
+        # NOT finding it proves nothing while a primary source is unreachable -
+        # it may well be sitting in the database we could not query. Calling a
+        # real citation fabricated is the one error this tool must not make, so
+        # a negative verdict is withheld whenever the evidence is incomplete.
+        if r < 0.45 and _net_failed():
+            print(f"INCONCLUSIVE - nothing close was found, but a primary source was "
+                  f"unreachable, so this is not evidence of fabrication: {a.query}")
+            print(f"  {_net_hint()}")
+            print(f"\n  Closest thing the reachable sources returned ({r:.0%} coverage):")
+            print(fmt_paper(best))
+            return
         verdict = ("MATCH (high confidence)" if r >= 0.75 else
                    "PARTIAL MATCH - confirm by hand that this is the same paper" if r >= 0.45 else
                    "NO MATCH -> very likely hallucinated")
