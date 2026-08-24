@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+message: "If this was useful in your work, please cite it."
+title: "scholarcheck: literature grounding from the command line"
+abstract: "Answers whether a research claim is already taken, who has extended it, and whether the references cited exist, by querying OpenAlex, Semantic Scholar, Crossref and arXiv. Withholds any negative verdict while a primary source is unreachable, so a rate-limited lookup is never reported as a fabricated citation."
+type: software
+authors:
+  - family-names: Cheng
+    given-names: Guo
+    affiliation: "University of Chinese Academy of Sciences"
+    # orcid: "https://orcid.org/0000-0000-0000-0000"   # fill in before the first Zenodo release
+repository-code: "https://github.com/GuoCheng24/scholarcheck"
+license: MIT
+version: 0.1.4
+keywords:
+  - "literature review"
+  - "prior art"
+  - "novelty"
+  - "citations"
+  - "hallucination"
+  - "OpenAlex"
+  - "research tools"

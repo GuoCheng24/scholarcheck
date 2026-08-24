@@ -1,0 +1,22 @@
+{
+  "title": "scholarcheck: literature grounding from the command line",
+  "description": "Answers whether a research claim is already taken, who has extended it, and whether the references cited exist, by querying OpenAlex, Semantic Scholar, Crossref and arXiv. Withholds any negative verdict while a primary source is unreachable, so a rate-limited lookup is never reported as a fabricated citation.",
+  "upload_type": "software",
+  "license": "mit",
+  "creators": [
+    {
+      "name": "Cheng, Guo",
+      "affiliation": "University of Chinese Academy of Sciences"
+    }
+  ],
+  "keywords": [
+    "literature review",
+    "prior art",
+    "novelty",
+    "citations",
+    "hallucination",
+    "OpenAlex",
+    "research tools"
+  ],
+  "access_right": "open"
+}
