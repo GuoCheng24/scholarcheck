@@ -382,7 +382,31 @@ def _fallback_bibtex(p):
 
 # ---------- audit: check every reference in a file ----------
 
-_BIB_ENTRY = re.compile(r"@(\w+)\s*\{\s*([^,\s]+)\s*,(.*?)\n\s*\}\s*(?=@|\Z)", re.S)
+_BIB_START = re.compile(r"@(\w+)\s*\{\s*([^,\s{}]+)\s*,", re.S)
+
+
+def _bib_entries(text):
+    """Yield (type, key, body) for every entry, by matching braces.
+
+    The previous regex ended an entry at a closing brace on its own line, so
+    the two commonest hand-written shapes - `doi={...}}` and a whole entry on
+    one line - matched nothing and were dropped in silence, which made `audit`
+    report a clean file it had never read.
+    """
+    for m in _BIB_START.finditer(text):
+        depth, i, n = 1, m.end(), len(text)
+        while i < n and depth:
+            c = text[i]
+            if c == "\\":
+                i += 2
+                continue
+            if c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+            i += 1
+        if depth == 0:
+            yield m.group(1), m.group(2), text[m.end():i - 1]
 
 
 def _bib_field(body, name):
@@ -430,7 +454,7 @@ def parse_refs(text):
     """
     out = []
     if "@" in text and re.search(r"@\w+\s*\{", text):
-        for _typ, key, body in _BIB_ENTRY.findall(text + "\n"):
+        for _typ, key, body in _bib_entries(text + "\n"):
             doi = _bib_field(body, "doi")
             eprint = _bib_field(body, "eprint")
             title = _bib_field(body, "title")

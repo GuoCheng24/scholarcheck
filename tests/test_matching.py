@@ -338,3 +338,31 @@ class TestDoiRegistry:
         st, _ = cli.audit_ref({"key": "k", "title": "", "doi": "10.1/x", "arxiv": ""})
         assert st == "UNCHECKED"
         cli.NET_ERRORS.clear()
+
+
+class TestBibEntryShapes:
+    """Hand-written .bib files come in shapes the old regex silently dropped.
+
+    Each of these was parsed as zero entries before 2026-09-02, so `audit`
+    reported a clean file it had never actually read - the worst kind of
+    failure for a checker.
+    """
+
+    CASES = [
+        ("closing brace on its own line", "@article{a,\n title={T},\n doi={10.1/x}\n}\n", 1),
+        ("last field and brace on one line", "@article{b,\n title={T},\n doi={10.1/x}}\n", 1),
+        ("whole entry on one line", "@article{c, title={T}, doi={10.1/x}}\n", 1),
+        ("two one-line entries", "@article{d, title={T1}}\n@article{e, title={T2}}\n", 2),
+        ("braces nested in the title", "@article{f, title={A {BERT} model}, doi={10.1/y}}\n", 1),
+        ("all three shapes mixed", "@a{x, title={T1}\n}\n@b{y, title={T2}}\n"
+                                   "@c{z, title={T3}, doi={10.2/z}}\n", 3),
+    ]
+
+    def test_every_shape_is_parsed(self):
+        for name, text, expected in self.CASES:
+            got = len(cli.parse_refs(text))
+            assert got == expected, f"{name}: parsed {got}, expected {expected}"
+
+    def test_fields_survive_the_shapes(self):
+        (ref,) = cli.parse_refs("@article{c, title={T}, doi={10.1/x}}\n")
+        assert ref["title"] == "T" and ref["doi"] == "10.1/x"
