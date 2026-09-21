@@ -10,7 +10,7 @@ authors:
     orcid: "https://orcid.org/0009-0006-7813-0114"
 repository-code: "https://github.com/GuoCheng24/scholarcheck"
 license: MIT
-version: 0.1.4
+version: 0.1.5
 keywords:
   - "literature review"
   - "prior art"
