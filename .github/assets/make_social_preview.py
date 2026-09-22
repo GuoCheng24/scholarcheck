@@ -32,17 +32,19 @@ if len(REFS) != 3:
 
 
 def chart(ax, accent):
+    import matplotlib.pyplot as plt
     y = 3.28
     for r in REFS:
         state, note = VERDICT[r["key"]]
         bad = state != "ok"
         colour = "#cf222e" if bad else "#1a7f37"
-        ax.text(0.80, y, state, fontsize=34, fontweight="bold" if bad else "normal",
+        ax.add_patch(plt.Rectangle((0.80, y - 0.19), 0.38, 0.38, color=colour, zorder=3))
+        ax.text(1.42, y, state, fontsize=34, fontweight="bold" if bad else "normal",
                 color=colour, family=SANS, va="center")
-        ax.text(3.35, y, note, fontsize=34,
+        ax.text(3.95, y, note, fontsize=34,
                 color="#17181a" if bad else "#55585c", family=SANS, va="center")
         y -= 0.72
-    ax.text(0.80, y - 0.10, "exit 1, so it stops a build", fontsize=36, fontweight="bold",
+    ax.text(0.80, y - 0.08, "exit 1, so it stops a build", fontsize=36, fontweight="bold",
             color="#17181a", family=SANS, va="center")
 
 
