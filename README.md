@@ -162,7 +162,7 @@ repos:
 
 | | |
 |---|---|
-| `priorart "<claim>"` | Nearest N real papers for a claim, plus a checklist for judging whether it is already taken |
+| `priorart "<claim>"` | Nearest N real papers for a claim, plus a checklist for judging whether it is already taken. `occupancy` is the same command under another name |
 | `citedby "<DOI/title>"` | What cited this paper — has someone already published your extension? |
 | `latest "<keywords>"` | Recent work only — relevance **and** recency, for checking what just appeared |
 | `injournal "<name>"` | Recent papers from one journal, to study its actual conventions before submitting |

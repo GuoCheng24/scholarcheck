@@ -366,3 +366,24 @@ class TestBibEntryShapes:
     def test_fields_survive_the_shapes(self):
         (ref,) = cli.parse_refs("@article{c, title={T}, doi={10.1/x}}\n")
         assert ref["title"] == "T" and ref["doi"] == "10.1/x"
+
+
+def test_python_m_runs_the_cli():
+    """`python -m scholarcheck` failed: the package had no __main__.py."""
+    import subprocess
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    r = subprocess.run([sys.executable, "-m", "scholarcheck", "--help"], cwd=root,
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert "usage" in r.stdout.lower()
+
+
+def test_every_subcommand_is_named_in_the_readme():
+    """`occupancy` was a working subcommand the README never mentioned."""
+    import re as _re
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    src = open(os.path.join(root, "scholarcheck", "cli.py"), encoding="utf-8").read()
+    choices = _re.search(r'"cmd", choices=\[([^\]]*)\]', src).group(1)
+    readme = open(os.path.join(root, "README.md"), encoding="utf-8").read()
+    for cmd in _re.findall(r'"([a-z]+)"', choices):
+        assert f"`{cmd}" in readme, f"subcommand {cmd!r} is not in the README"
