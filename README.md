@@ -240,6 +240,8 @@ Written while trying to get papers out, so they tend to be useful at the same po
 - [sciglyph](https://github.com/GuoCheng24/sciglyph) — draw publication figures as code, in pure matplotlib
 - [world-model-map](https://github.com/GuoCheng24/world-model-map) — a map of open-source world models and where their authors say they break
 - [kakeya-conjecture-lab](https://github.com/GuoCheng24/kakeya-conjecture-lab) — an interactive lab for the Kakeya conjecture, with a box-counting meter
+- [doubleblind](https://github.com/GuoCheng24/doubleblind) — re-derive every number in a README or paper from committed files, and brief a reviewer that was told nothing
+- [groundwork](https://github.com/GuoCheng24/groundwork) — a research pipeline for coding agents whose first stage can return NO-GO; on PyPI as `groundwork-research`
 
 ## License
 
