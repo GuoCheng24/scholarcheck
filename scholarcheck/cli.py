@@ -804,6 +804,7 @@ def _main():
         return 0
 
     ap = argparse.ArgumentParser(
+        prog="scholarcheck",
         description="Verifiable literature grounding - OpenAlex / Semantic Scholar / Crossref / arXiv",
         epilog='example: scholarcheck priorart "low-degree polynomial detection lower bound" -n 6 --since 2020',
         formatter_class=argparse.RawDescriptionHelpFormatter)

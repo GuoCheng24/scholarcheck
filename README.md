@@ -151,7 +151,7 @@ if you would rather be stopped than proceed unsure.
 ```yaml
 repos:
   - repo: https://github.com/GuoCheng24/scholarcheck
-    rev: v0.1.5
+    rev: v0.1.6
     hooks:
       - id: scholarcheck
 ```

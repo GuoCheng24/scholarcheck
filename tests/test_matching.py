@@ -375,7 +375,7 @@ def test_python_m_runs_the_cli():
     r = subprocess.run([sys.executable, "-m", "scholarcheck", "--help"], cwd=root,
                        capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
-    assert "usage" in r.stdout.lower()
+    assert r.stdout.startswith("usage: scholarcheck "), r.stdout[:80]
 
 
 def test_every_subcommand_is_named_in_the_readme():
